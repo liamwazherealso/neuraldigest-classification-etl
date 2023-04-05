@@ -10,10 +10,12 @@ DATE = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 schema = ['title', 'topic']
 s3 = boto3.client('s3')
+config = {}
+
 
 def gather_news():
     paginator = s3.get_paginator('list_objects_v2') 
-    bucket = config['from_bucket']
+    bucket = config['FROM_S3_BUCKET']
 
     pages = paginator.paginate(Bucket=bucket, Prefix=DATE)
     for page in pages:
@@ -40,7 +42,7 @@ def transform_news(csv_buffer):
     return pd.DataFrame(data).to_csv(csv_buffer)
 
 def main():
-    bucket = config['to_bucket']
+    bucket = config['TO_S3_BUCKET']
     file_name = f'{DATE}-news.csv'
 
     # Create a buffer to hold the transformed data
