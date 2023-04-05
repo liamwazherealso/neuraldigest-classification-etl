@@ -6,7 +6,7 @@ build:
 
 up:
 	rm -rf dist/*
-	docker compose up 
+	docker compose up
 
 lambda:
 	pip install -t dist/lambda .
