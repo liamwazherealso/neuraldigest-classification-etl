@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 import boto3
@@ -35,12 +36,12 @@ def gather_news():
 
 
 def transform_news(csv_buffer):
-    data = dict.fromkeys(schema, list())
+    data = defaultdict(list)
     for article in gather_news():
-        for key in data.keys():
+        for key in schema:
             data[key].append(article[key])
 
-    return pd.DataFrame(data).to_csv(csv_buffer)
+    return pd.DataFrame(data).to_csv(csv_buffer, index=False)
 
 
 def main():
