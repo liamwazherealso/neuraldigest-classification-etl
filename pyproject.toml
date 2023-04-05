@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "news-ml-classification-etl"
+version = "0.0.1"
+description = "ETL for classification task of news"
+authors = ["Liam Pieri <liamwazherealso@gmail.com>"]
+license = "MIT License"
+readme = "README.md"
+packages = [{include = "news_ml_classification_etl"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+boto3 = "^1.26.106"
+pandas = "^2.0.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
