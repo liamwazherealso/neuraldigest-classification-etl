@@ -13,6 +13,9 @@ boto3 = "^1.26.106"
 pandas = "^2.0.0"
 
 
+[tool.poetry.group.dev.dependencies]
+pre-commit = "^3.2.2"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
