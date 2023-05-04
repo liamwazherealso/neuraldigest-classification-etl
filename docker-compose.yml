@@ -2,14 +2,14 @@
 version: '3'
 
 services:
-   news-ml-classification-etl:
+   neuraldigest-classification-etl:
         # this is for allowing to run in detached mode
         tty: true
         stdin_open: true
         build:
             context: ./
-            dockerfile: docker/news-ml-classification-etl.Dockerfile
-        image: liamwazherealso/news-ml-classification-etl
-        container_name: news-ml-classification-etl
+            dockerfile: docker/neuraldigest-classification-etl.Dockerfile
+        image: liamwazherealso/neuraldigest-classification-etl
+        container_name: neuraldigest-classification-etl
         volumes:
             - ./dist:/app/dist

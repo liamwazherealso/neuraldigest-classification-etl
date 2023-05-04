@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "news-ml-classification-etl"
+name = "neuraldigest-classification-etl"
 version = "0.0.1"
 description = "ETL for classification task of news"
 authors = ["Liam Pieri <liamwazherealso@gmail.com>"]
