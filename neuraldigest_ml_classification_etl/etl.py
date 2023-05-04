@@ -2,13 +2,19 @@ import io
 import json
 import logging
 from collections import defaultdict
+from copy import deepcopy
 from datetime import datetime, timedelta
 
 import boto3
 import pandas as pd
+import pinecone
+from langchain.docstore.document import Document
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 DATE = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-
+CSV = "csv"
+PINECONE = "pinecone"
 schema = ["title", "topic"]
 s3 = boto3.client("s3")
 config = {}
@@ -35,7 +41,8 @@ def gather_news():
                 yield json_data
 
 
-def transform_news(csv_buffer):
+def transform_news_to_csv(csv_buffer):
+    """Transform the news data into a CSV file"""
     data = defaultdict(list)
     for article in gather_news():
         for key in schema:
@@ -44,16 +51,61 @@ def transform_news(csv_buffer):
     return pd.DataFrame(data).to_csv(csv_buffer, index=False)
 
 
-def main():
+def csvEtl():
     bucket = config["TO_S3_BUCKET"]
     file_name = f"{DATE}-news.csv"
 
     # Create a buffer to hold the transformed data
     csv_buffer = io.StringIO()
-    transform_news(csv_buffer)
+    transform_news_to_csv(csv_buffer)
 
     # Upload the file to S3
     s3.put_object(Body=csv_buffer.getvalue(), Bucket=bucket, Key=file_name)
+
+
+def pineconeEtl():
+    """Transform the news data into embeddings and upload to Pinecone"""
+
+    # Create LangChain documents from the news data
+    docs = []
+    for article in gather_news():
+        m_data = deepcopy(article)
+        del m_data["text"]
+        doc = Document(page_content=article["text"], metadata=m_data)
+        docs.append(doc)
+
+    # Split and embed the documents
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=50)
+    texts = text_splitter.split_documents(docs)
+
+    embeddings = OpenAIEmbeddings(openai_api_key=config["OPEN_API_KEY"])
+    embedding_list = embeddings.embed_documents([text.page_content for text in texts])
+    chunk_size = 50
+    pc_emb = []
+
+    # Upload the embeddings to Pinecone
+    pinecone.init(
+        api_key=config["PINECONE_API_KEY"], environment=config["PINECONE_ENV"]
+    )
+    index = pinecone.Index(config["PINECONE_INDEX_NAME"])
+    from copy import copy
+
+    for i, emb in enumerate(embedding_list):
+        m_data = copy(texts[i].metadata)
+        m_data["publisher"] = m_data["publisher"]["title"]
+        pc_emb.append(("vec" + str(i), emb, m_data))
+
+    for i in range(0, len(pc_emb), chunk_size):
+        chunk = pc_emb[i : i + chunk_size]
+
+        index.upsert(vectors=chunk, namespace=DATE)
+
+
+def main():
+    if config["ETL"] == CSV:
+        csvEtl()
+    elif config["ETL"] == PINECONE:
+        pineconeEtl()
 
 
 def lambda_handler(event, _):
@@ -61,6 +113,21 @@ def lambda_handler(event, _):
     logging.basicConfig(level=logging.INFO, format=log_fmt)
 
     config["FROM_S3_BUCKET"] = event["FROM_S3_BUCKET"]
-    config["TO_S3_BUCKET"] = event["TO_S3_BUCKET"]
+    config["ETL"] = event["ETL"]
+
+    if config["ETL"] not in [CSV, PINECONE]:
+        raise ValueError(f"Invalid ETL type: {config['ETL']}")
+
+    if config["ETL"] == CSV:
+        config["TO_S3_BUCKET"] = event["TO_S3_BUCKET"]
+    else:
+        pineconeEtlConfigs = [
+            "PINECONE_API_KEY",
+            "PINECONE_ENV",
+            "PINECONE_INDEX_NAME",
+            "OPEN_API_KEY",
+        ]
+        for conf in pineconeEtlConfigs:
+            config[conf] = event[conf]
 
     main()
