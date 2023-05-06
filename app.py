@@ -4,6 +4,7 @@ import logging
 from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime, timedelta
+from logging import handlers
 
 import boto3
 import pandas as pd
@@ -18,6 +19,8 @@ PINECONE = "pinecone"
 schema = ["title", "topic"]
 s3 = boto3.client("s3")
 config = {}
+
+logger = logging.getLogger()
 
 
 def gather_news():
@@ -66,6 +69,8 @@ def csvEtl():
 def pineconeEtl():
     """Transform the news data into embeddings and upload to Pinecone"""
 
+    logging.debug("Starting pineconeEtl")
+
     # Create LangChain documents from the news data
     docs = []
     for article in gather_news():
@@ -100,6 +105,8 @@ def pineconeEtl():
 
         index.upsert(vectors=chunk, namespace=DATE)
 
+    logging.debug("Finished pineconeEtl")
+
 
 def main():
     if config["ETL"] == CSV:
@@ -109,8 +116,17 @@ def main():
 
 
 def lambda_handler(event, _):
-    log_fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    logging.basicConfig(level=logging.INFO, format=log_fmt)
+
+    if "LOG_LEVEL" in event and event["LOG_LEVEL"].lower() in [
+        "debug",
+        "info",
+        "warning",
+        "error",
+        "critical",
+    ]:
+        logger.setLevel(level=getattr(logging, event["LOG_LEVEL"].upper()))
+    else:
+        logger.setLevel(level=logging.INFO)
 
     config["FROM_S3_BUCKET"] = event["FROM_S3_BUCKET"]
     config["ETL"] = event["ETL"]
