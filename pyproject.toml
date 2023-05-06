@@ -1,3 +1,10 @@
+[project]
+name = "neuraldigest_etl"
+authors = [
+    {name = "Liam Pieri", email = "pieri.liam@gmail.com"}
+    ]
+description = "ETL pipeline for NeuralDigest"
+
 [flake8]
 max-line-length = 88
 extend-ignore = E203
