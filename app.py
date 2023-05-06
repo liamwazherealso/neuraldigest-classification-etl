@@ -24,6 +24,7 @@ logger = logging.getLogger()
 
 
 def gather_news():
+    logging.debug("Starting gather_news")
     paginator = s3.get_paginator("list_objects_v2")
     bucket = config["FROM_S3_BUCKET"]
 
@@ -35,13 +36,16 @@ def gather_news():
         for obj in page["Contents"]:
             # Check if the object is a JSON file
             if not obj["Key"].endswith(".json"):
-                # Read the contents of the object and decode the JSON data
-                json_data = json.loads(
-                    s3.get_object(Bucket=bucket, Key=obj["Key"])["Body"]
-                    .read()
-                    .decode("utf-8")
-                )
-                yield json_data
+                continue
+            logging.debug("Found json file: {}".format(obj["Key"]))
+            # Read the contents of the object and decode the JSON data
+            json_data = json.loads(
+                s3.get_object(Bucket=bucket, Key=obj["Key"])["Body"]
+                .read()
+                .decode("utf-8")
+            )
+            yield json_data
+    logging.debug("Finished gather_news")
 
 
 def transform_news_to_csv(csv_buffer):
@@ -71,6 +75,12 @@ def pineconeEtl():
 
     logging.debug("Starting pineconeEtl")
 
+    pinecone.init(
+        api_key=config["PINECONE_API_KEY"], environment=config["PINECONE_ENV"]
+    )
+
+    index = pinecone.Index(config["PINECONE_INDEX_NAME"])
+
     # Create LangChain documents from the news data
     docs = []
     for article in gather_news():
@@ -78,6 +88,8 @@ def pineconeEtl():
         del m_data["text"]
         doc = Document(page_content=article["text"], metadata=m_data)
         docs.append(doc)
+
+    logging.debug("Created {} langchain documents".format(len(docs)))
 
     # Split and embed the documents
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=50)
@@ -88,11 +100,10 @@ def pineconeEtl():
     chunk_size = 50
     pc_emb = []
 
+    logging.debug("Created {} embeddings".format(len(embedding_list)))
+
     # Upload the embeddings to Pinecone
-    pinecone.init(
-        api_key=config["PINECONE_API_KEY"], environment=config["PINECONE_ENV"]
-    )
-    index = pinecone.Index(config["PINECONE_INDEX_NAME"])
+
     from copy import copy
 
     for i, emb in enumerate(embedding_list):
@@ -103,16 +114,18 @@ def pineconeEtl():
     for i in range(0, len(pc_emb), chunk_size):
         chunk = pc_emb[i : i + chunk_size]
 
-        index.upsert(vectors=chunk, namespace=DATE)
+        index.upsert(vectors=chunk, namespace="articles")
 
     logging.debug("Finished pineconeEtl")
 
 
 def main():
+    logging.debug("Starting main")
     if config["ETL"] == CSV:
         csvEtl()
     elif config["ETL"] == PINECONE:
         pineconeEtl()
+    logging.debug("Finished main")
 
 
 def lambda_handler(event, _):
