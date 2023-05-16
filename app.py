@@ -9,6 +9,7 @@ from logging import handlers
 import boto3
 import pandas as pd
 import pinecone
+import weaviate
 from langchain.docstore.document import Document
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -16,6 +17,8 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 DATE = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 CSV = "csv"
 PINECONE = "pinecone"
+WEAVIATE = "weaviate"
+
 schema = ["title", "topic"]
 s3 = boto3.client("s3")
 config = {}
@@ -95,7 +98,7 @@ def pineconeEtl():
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=50)
     texts = text_splitter.split_documents(docs)
 
-    embeddings = OpenAIEmbeddings(openai_api_key=config["OPEN_API_KEY"])
+    embeddings = OpenAIEmbeddings(openai_api_key=config["OPENAI_API_KEY"])
     embedding_list = embeddings.embed_documents([text.page_content for text in texts])
     chunk_size = 50
     pc_emb = []
@@ -119,12 +122,45 @@ def pineconeEtl():
     logging.debug("Finished pineconeEtl")
 
 
+def weaviateEtl():
+    """Transform the news data into embeddings and upload to Weaviate"""
+
+    logging.debug("Starting weaviateEtl")
+
+    news_data = []
+
+    for news in gather_news():
+        news["publisher"] = news["publisher"]["href"]
+        news["published_date"] = news["published date"]
+        del news["published date"]
+        news_data.append(news)
+
+    client = weaviate.Client(
+        url=config["WEAVIATE_URL"],
+        auth_client_secret=weaviate.AuthApiKey(api_key=config["WEAVIATE_API_KEY"]),
+        additional_headers={"X-OpenAI-Api-Key": config["OPENAI_API_KEY"]},
+    )
+
+    # Configure a batch process
+    with client.batch as batch:
+        batch.batch_size = 100
+        # Batch import all Questions
+        for i, d in enumerate(news_data):
+            print(f"importing article: {i+1}")
+
+            client.batch.add_data_object(d, "Article")
+
+    logging.debug("Finished weaviateEtl")
+
+
 def main():
     logging.debug("Starting main")
     if config["ETL"] == CSV:
         csvEtl()
     elif config["ETL"] == PINECONE:
         pineconeEtl()
+    elif config["ETL"] == WEAVIATE:
+        weaviateEtl()
     logging.debug("Finished main")
 
 
@@ -144,19 +180,25 @@ def lambda_handler(event, _):
     config["FROM_S3_BUCKET"] = event["FROM_S3_BUCKET"]
     config["ETL"] = event["ETL"]
 
-    if config["ETL"] not in [CSV, PINECONE]:
-        raise ValueError(f"Invalid ETL type: {config['ETL']}")
-
     if config["ETL"] == CSV:
         config["TO_S3_BUCKET"] = event["TO_S3_BUCKET"]
-    else:
+    elif config["ETL"] == PINECONE:
         pineconeEtlConfigs = [
             "PINECONE_API_KEY",
             "PINECONE_ENV",
             "PINECONE_INDEX_NAME",
-            "OPEN_API_KEY",
+            "OPENAI_API_KEY",
         ]
         for conf in pineconeEtlConfigs:
             config[conf] = event[conf]
-
+    elif config["ETL"] == WEAVIATE:
+        weaviateEtlConfigs = [
+            "WEAVIATE_URL",
+            "WEAVIATE_API_KEY",
+            "OPENAI_API_KEY",
+        ]
+        for conf in weaviateEtlConfigs:
+            config[conf] = event[conf]
+    else:
+        raise ValueError(f"Invalid ETL type: {config['ETL']}")
     main()
